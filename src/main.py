@@ -1,19 +1,12 @@
 from fastapi import FastAPI
-from core.database import init_db
-from routers.auth import router as auth_router
-from routers.channels import router as channel_router
-from routers.messages import router as message_router
-from routers.ws_chat import router as ws_chat_router
-from core.config import settings
 from fastapi.middleware.cors import CORSMiddleware
+
+from routers import auth, channels, messages, ws_chat, roles, users, dm
+from core.database import init_db
 
 app = FastAPI()
 
-origins = [
-    "http://localhost",
-    "http://localhost:3000",
-]
-
+origins = ["http://localhost:3000"]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -21,8 +14,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-init_db(app)                   
-app.include_router(channel_router)
-app.include_router(message_router)
-app.include_router(auth_router)  
-app.include_router(ws_chat_router)
+
+app.include_router(auth.router, prefix="/auth")
+app.include_router(channels.router)
+app.include_router(messages.router)
+app.include_router(ws_chat.router)
+app.include_router(roles.router)
+app.include_router(users.router)
+app.include_router(dm.router)
+
+init_db(app)

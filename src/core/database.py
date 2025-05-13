@@ -4,7 +4,7 @@ from core.config import settings
 
 TORTOISE_ORM = {
     "connections": {
-        "default": settings.DATABASE_URL  # e.g. "mysql://user:pass@host:3306/chatdb"
+        "default": settings.DATABASE_URL
     },
     "apps": {
         "models": {
@@ -13,6 +13,7 @@ TORTOISE_ORM = {
                 "models.channel",
                 "models.channelmember",
                 "models.message",
+                "models.role",
                 "aerich.models"               
             ],
             "default_connection": "default",

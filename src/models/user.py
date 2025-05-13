@@ -1,28 +1,34 @@
-from enum import Enum
-from tortoise import models, fields
+from tortoise import fields, models
+from typing import TYPE_CHECKING
 
-class Role(str, Enum):
-    admin  = "admin"
-    member = "member"
-    guest  = "guest"
+if TYPE_CHECKING:  # for Pylance autocomplete only
+    from .channelmember import ChannelMember
+    from .message import Message
+    from .role import Role
+
 
 class User(models.Model):
-    """
-    Tortoise-ORM model for users.
-    Email is used as the unique login identifier.
-    """
-    id          = fields.IntField(pk=True)
-    email       = fields.CharField(max_length=255, unique=True)
-    hashed_pw   = fields.CharField(max_length=128)
-    role        = fields.CharEnumField(Role, default=Role.member)
-    is_active   = fields.BooleanField(default=True)
-    created_at  = fields.DatetimeField(auto_now_add=True)
-    updated_at  = fields.DatetimeField(auto_now=True)
-    last_login  = fields.DatetimeField(null=True)
+    id: int = fields.IntField(pk=True)
+
+    # NEW
+    full_name: str = fields.CharField(max_length=120)
+
+    email: str = fields.CharField(max_length=120, unique=True)
+    hashed_password: str = fields.CharField(max_length=128)
+
+    role: fields.ForeignKeyNullableRelation["Role"] = fields.ForeignKeyField(
+        "models.Role", related_name="users", null=True
+    )
+    current_jti: str | None = fields.CharField(max_length=36, null=True)
+
+    is_active: bool = fields.BooleanField(default=True)
+    last_login: str = fields.DatetimeField(auto_now=True)
+
+    messages: fields.ReverseRelation["Message"]
+    channel_memberships: fields.ReverseRelation["ChannelMember"]
 
     class Meta:
         table = "users"
-        ordering = ["id"]
 
-    def __str__(self):
-        return f"<User {self.id} {self.email}>"
+    def __str__(self) -> str:
+        return f"{self.full_name} <{self.email}>"

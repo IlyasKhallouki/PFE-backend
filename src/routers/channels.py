@@ -1,36 +1,45 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from models.channel import Channel               # your Tortoise model
-from schemas.channel import ChannelCreate, ChannelRead
+from typing import List
+
+from models.channel import Channel
+from models.channelmember import ChannelMember
+from models.user import User
 from core.dependencies import get_current_user
+from pydantic import BaseModel
+
+from tortoise.expressions import Q
 
 router = APIRouter(prefix="/channels", tags=["channels"])
 
-@router.post("", response_model=ChannelRead, status_code=status.HTTP_201_CREATED)
-async def create_channel(data: ChannelCreate, user=Depends(get_current_user)):
-    return await Channel.create(**data.dict())
 
-@router.get("", response_model=list[ChannelRead])
-async def list_channels(user=Depends(get_current_user)):
-    return await Channel.all().order_by("name")
+class ChannelCreate(BaseModel):
+    name: str
+    is_private: bool = False
+    role_id: int | None = None
+    members: List[int] | None = None  # only when private
 
-@router.get("/{id}", response_model=ChannelRead)
-async def get_channel(id: int, user=Depends(get_current_user)):
-    channel = await Channel.get_or_none(id=id)      
-    if not channel:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Channel not found")
-    return channel
 
-@router.put("/{id}", response_model=ChannelRead)
-async def update_channel(id: int, data: ChannelCreate, user=Depends(get_current_user)):
-    channel = await Channel.get_or_none(id=id)
-    if not channel:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Channel not found")
-    await channel.update_from_dict(data.dict()).save()
-    return await Channel.get(id=id)
+@router.get("/", dependencies=[Depends(get_current_user)])
+async def list_my_channels(user: User = Depends(get_current_user)):
+    qs = Channel.filter(
+        Q(is_private=False) | Q(members__user_id=user.id)
+    )
+    return [
+        {"id": c.id, "name": c.name, "is_private": c.is_private}
+        async for c in qs
+        if c.role_id is None or c.role_id == user.role_id
+    ]
 
-@router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_channel(id: int, user=Depends(get_current_user)):
-    deleted_count = await Channel.filter(id=id).delete()
-    if not deleted_count:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Channel not found")
-    return None
+
+
+@router.post("/", status_code=201)
+async def create_channel(payload: ChannelCreate, user: User = Depends(get_current_user)):
+    # if role‑bound, only admins can create
+    if payload.role_id and (user.role is None or user.role.name != "admin"):
+        raise HTTPException(status_code=403)
+
+    ch = await Channel.create(name=payload.name, is_private=payload.is_private, role_id=payload.role_id)
+    if payload.is_private and payload.members:
+        for uid in payload.members + [user.id]:
+            await ChannelMember.get_or_create(channel_id=ch.id, user_id=uid)
+    return {"id": ch.id, "name": ch.name, "is_private": ch.is_private}

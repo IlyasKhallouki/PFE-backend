@@ -1,11 +1,21 @@
-from tortoise import models, fields
+from tortoise import fields, models
+from models.role import Role
 
 class Channel(models.Model):
-    id         = fields.IntField(pk=True)  
-    name       = fields.CharField(max_length=64, unique=True)  
-    is_private = fields.BooleanField(default=False)  
-    created_at = fields.DatetimeField(auto_now_add=True)  
+    id: int = fields.IntField(pk=True)
+    name: str = fields.CharField(max_length=60)
+    is_private: bool = fields.BooleanField(default=False)
+
+    role: fields.ForeignKeyNullableRelation[Role] = fields.ForeignKeyField(
+        "models.Role", related_name="channels", null=True
+    )
+
+    members: fields.ReverseRelation["ChannelMember"] # type: ignore[name-defined]
+    messages: fields.ReverseRelation["Message"] # type: ignore[name-defined]
 
     class Meta:
+        unique_together = ("name", "is_private")
         table = "channels"
-        ordering = ["name"]
+
+    def __str__(self) -> str: 
+        return self.name
