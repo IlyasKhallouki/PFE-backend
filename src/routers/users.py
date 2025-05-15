@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from models.user import User
-from schemas.user import UserRead, UserUpdateRole
+from schemas.user import UserRead, UserUpdateRole, UserCreate
 from core.dependencies import get_current_user, require_admin
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -26,6 +26,20 @@ async def list_users(_: User = Depends(get_current_user)):
             "role": user.role
         } for user in users
     ]
+    
+@router.post("/add", response_model=UserRead)
+async def add_user(
+    payload: UserCreate,
+    _: User = Depends(require_admin),
+):
+    """Admin-only: create a new user."""
+    user = await User.create(
+        full_name=payload.full_name,
+        email=payload.email,
+        password=payload.password,
+        role_id=payload.role_id,
+    )
+    return user
 
 
 @router.put("/{user_id}/role", response_model=UserRead)

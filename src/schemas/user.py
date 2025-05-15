@@ -15,6 +15,12 @@ class UserRead(BaseModel):
         self.full_name = full_name
         self.email = email
         self.role = role
+        
+class UserCreate(BaseModel):
+    full_name: str
+    email: str
+    password: str
+    role_id: int = 3
 
 
 class UserUpdateRole(BaseModel):
