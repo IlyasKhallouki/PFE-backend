@@ -9,8 +9,6 @@ if TYPE_CHECKING:  # for Pylance autocomplete only
 
 class User(models.Model):
     id: int = fields.IntField(pk=True)
-
-    # NEW
     full_name: str = fields.CharField(max_length=120)
 
     email: str = fields.CharField(max_length=120, unique=True)

@@ -19,7 +19,7 @@ class UserRead(BaseModel):
 class UserCreate(BaseModel):
     full_name: str
     email: str
-    password: str
+    password: str | None
     role_id: int = 3
 
 
