@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Response, HTTPException, status, Depends
+from fastapi import APIRouter, Response, HTTPException, status, Request, Depends
 from uuid import uuid4
 
 from core.security import verify_password, create_access_token
@@ -58,3 +58,11 @@ async def logout(response: Response, current_user: User = Depends(get_current_us
     )
     
     return {"detail": "Successfully logged out"}
+
+@router.get("/bot-info")
+async def get_bot_info(request: Request, _: User = Depends(get_current_user)):
+    """
+    Returns the user ID and name of the chatbot.
+    """
+    bot_id = request.app.state.chatbot_user_id
+    return {"id": bot_id, "full_name": "Chatbot"}
