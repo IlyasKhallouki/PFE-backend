@@ -10,23 +10,17 @@ router = APIRouter(prefix="/users", tags=["users"])
 
 @router.get("/")
 async def list_users(_: User = Depends(get_current_user)):
-    """Admin-only: list every user."""
+    """List all users"""
     users = await User.all().prefetch_related("role")
-    # return [
-    #     UserRead(
-    #         user.id,
-    #         user.full_name,
-    #         user.email,
-    #         user.role
-    #     ) for user in
-    # ]
+    
     return [
         {
             "id": user.id,
             "full_name": user.full_name,
             "email": user.email,
-            "role": user.role
-        } for user in users
+            "role": user.role.name if user.role else None
+        } 
+        for user in users
     ]
     
 @router.post("/add")

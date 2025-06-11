@@ -4,6 +4,7 @@ from uuid import uuid4
 from core.security import verify_password, create_access_token
 from models.user import User
 from schemas.token import LoginRequest, TokenResponse
+from core.dependencies import get_current_user
 
 router = APIRouter()
 
@@ -29,3 +30,31 @@ async def login(payload: LoginRequest, resp: Response):
         max_age=60 * 60 * 24,
     )
     return TokenResponse(access_token=token)
+
+
+@router.get("/me")
+async def get_current_user_info(current_user: User = Depends(get_current_user)):
+    """Get current user information"""
+    return {
+        "id": current_user.id,
+        "full_name": current_user.full_name,
+        "email": current_user.email,
+        "role": current_user.role.name if current_user.role else None
+    }
+    
+@router.post("/logout")
+async def logout(response: Response, current_user: User = Depends(get_current_user)):
+    """Logout current user"""
+    # Invalidate the current JWT
+    current_user.current_jti = None
+    await current_user.save()
+    
+    # Clear the cookie
+    response.delete_cookie(
+        key="access_token",
+        httponly=True,
+        secure=True,
+        samesite="lax"
+    )
+    
+    return {"detail": "Successfully logged out"}

@@ -21,15 +21,33 @@ class ChannelCreate(BaseModel):
 
 @router.get("/", dependencies=[Depends(get_current_user)])
 async def list_my_channels(user: User = Depends(get_current_user)):
-    qs = Channel.filter(
-        Q(is_private=False) | Q(members__user_id=user.id)
-    )
+    # Get public channels and private channels the user is a member of
+    public_channels = await Channel.filter(
+        is_private=False,
+        role_id__in=[None, user.role_id] if user.role_id else [None]
+    ).all()
+    
+    # Get private channels through membership
+    private_channel_ids = await ChannelMember.filter(
+        user_id=user.id
+    ).values_list("channel_id", flat=True)
+    
+    private_channels = await Channel.filter(
+        id__in=private_channel_ids,
+        is_private=True
+    ).all()
+    
+    # Combine and format
+    all_channels = public_channels + private_channels
+    
     return [
-        {"id": c.id, "name": c.name, "is_private": c.is_private}
-        async for c in qs
-        if c.role_id is None or c.role_id == user.role_id
+        {
+            "id": ch.id,
+            "name": ch.name,
+            "is_private": ch.is_private
+        }
+        for ch in all_channels
     ]
-
 
 
 @router.post("/", status_code=201)
