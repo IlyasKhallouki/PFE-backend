@@ -15,7 +15,6 @@ router = APIRouter()
 
 AI_SERVICE_URL = "http://127.0.0.1:8001"
 
-# --- No changes in ConnectionManager class ---
 class ConnectionManager:
     """Enhanced WebSocket connection manager with presence tracking"""
     
@@ -72,13 +71,11 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
-# --- MODIFICATION START: Corrected function signature ---
 @router.websocket("/ws/{channel_id}")
 async def websocket_endpoint(
     websocket: WebSocket,
     channel_id: int,
 ):
-# --- MODIFICATION END ---
     token = websocket.cookies.get("access_token")
     if not token:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
@@ -101,9 +98,7 @@ async def websocket_endpoint(
         
     # --- Check for Chatbot Channel ---
     is_chatbot_channel = False
-    # --- MODIFICATION START: Access state via websocket.app ---
     chatbot_user_id = websocket.app.state.chatbot_user_id
-    # --- MODIFICATION END ---
     if channel.is_private:
         members = await ChannelMember.filter(channel_id=channel_id).values_list("user_id", flat=True)
         if set(members) == {user.id, chatbot_user_id}:
@@ -137,6 +132,22 @@ async def websocket_endpoint(
             text = (await websocket.receive_text()).strip()
 
             if is_chatbot_channel:
+                # Save the user's message first
+                user_message = await msg_model.Message.create(content=text, channel_id=channel_id, author_id=user.id)
+                
+                # Broadcast the user's message immediately
+                await manager.broadcast(channel_id, {
+                    "type": "message", 
+                    "data": {
+                        "id": user_message.id, 
+                        "author": user.full_name, 
+                        "author_id": user.id, 
+                        "content": user_message.content, 
+                        "sent_at": user_message.sent_at.isoformat()
+                    }
+                })
+                
+                # Get history for chatbot context
                 history_messages = await msg_model.Message.filter(channel_id=channel_id).order_by("sent_at").limit(10)
                 past_user_inputs = [m.content for m in history_messages if m.author_id == user.id]
                 generated_responses = [m.content for m in history_messages if m.author_id == chatbot_user_id]
@@ -158,10 +169,10 @@ async def websocket_endpoint(
                 except httpx.RequestError:
                     bot_reply_content = "I am having trouble connecting to my brain right now."
                 
-                await msg_model.Message.create(content=text, channel_id=channel_id, author_id=user.id)
+                # Save and broadcast bot response
                 bot_message = await msg_model.Message.create(content=bot_reply_content, channel_id=channel_id, author_id=chatbot_user_id)
                 
-                await websocket.send_json({
+                await manager.broadcast(channel_id, {
                     "type": "message",
                     "data": {
                         "id": bot_message.id,
@@ -174,10 +185,27 @@ async def websocket_endpoint(
                 continue
 
             if text.lower().startswith("/summarize"):
+                # Save the user's /summarize command message first
+                user_message = await msg_model.Message.create(content=text, channel_id=channel_id, author_id=user.id)
+                
+                # Broadcast the user's command immediately
+                await manager.broadcast(channel_id, {
+                    "type": "message", 
+                    "data": {
+                        "id": user_message.id, 
+                        "author": user.full_name, 
+                        "author_id": user.id, 
+                        "content": user_message.content, 
+                        "sent_at": user_message.sent_at.isoformat()
+                    }
+                })
+                
+                # Process summarization
                 recent_messages = await msg_model.Message.filter(channel_id=channel_id).order_by("-sent_at").limit(50).prefetch_related("author")
                 if not recent_messages:
                     await websocket.send_json({"type": "system_message", "data": {"content": "Not enough messages to summarize."}})
                     continue
+                    
                 chat_text = "\n".join([f"{msg.author.full_name}: {msg.content}" for msg in reversed(recent_messages)])
                 summary = "Could not generate a summary."
                 try:
@@ -189,11 +217,31 @@ async def websocket_endpoint(
                             summary = f"Error: Could not contact AI service (status: {response.status_code})."
                 except httpx.RequestError as e:
                     summary = f"Error: Could not connect to AI service: {e}"
-                await manager.broadcast(channel_id, {"type": "message", "data": {"id": 0, "author": "Summary Bot", "author_id": 0, "content": summary, "sent_at": datetime.utcnow().isoformat()}})
+                    
+                await manager.broadcast(channel_id, {
+                    "type": "message", 
+                    "data": {
+                        "id": 0, 
+                        "author": "Summary Bot", 
+                        "author_id": 0, 
+                        "content": summary, 
+                        "sent_at": datetime.utcnow().isoformat()
+                    }
+                })
                 continue
 
+            # Regular message handling
             message = await msg_model.Message.create(content=text, channel_id=channel_id, author_id=user.id)
-            await manager.broadcast(channel_id, {"type": "message", "data": {"id": message.id, "author": user.full_name, "author_id": user.id, "content": message.content, "sent_at": message.sent_at.isoformat()}})
+            await manager.broadcast(channel_id, {
+                "type": "message", 
+                "data": {
+                    "id": message.id, 
+                    "author": user.full_name, 
+                    "author_id": user.id, 
+                    "content": message.content, 
+                    "sent_at": message.sent_at.isoformat()
+                }
+            })
                 
     except WebSocketDisconnect:
         manager.disconnect(channel_id, user.id, websocket)
