@@ -1,4 +1,4 @@
-# routers/ws_chat.py
+# routers/ws_chat.py - Updated with Smart Reply Support
 from fastapi import WebSocket, WebSocketDisconnect, APIRouter, status, Depends
 from tortoise.exceptions import DoesNotExist
 from datetime import datetime
@@ -71,6 +71,48 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
+async def get_smart_replies(channel_id: int, current_user_name: str) -> List[str]:
+    """
+    Get smart reply suggestions based on recent conversation context
+    """
+    try:
+        # Get recent messages for context (last 8 messages)
+        recent_messages = await msg_model.Message.filter(
+            channel_id=channel_id
+        ).order_by("-sent_at").limit(8).prefetch_related("author")
+        
+        if len(recent_messages) < 2:  # Need at least some context
+            return ["Thanks!", "Got it!", "Sounds good!"]
+        
+        # Format messages for AI service
+        formatted_messages = []
+        for msg in reversed(recent_messages):  # Reverse to get chronological order
+            formatted_messages.append({
+                "author": msg.author.full_name,
+                "content": msg.content
+            })
+        
+        # Call AI service
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{AI_SERVICE_URL}/api/v1/smart-replies",
+                json={
+                    "recent_messages": formatted_messages,
+                    "current_user": current_user_name,
+                    "max_suggestions": 3
+                },
+                timeout=15.0
+            )
+            
+            if response.status_code == 200:
+                return response.json().get("suggestions", ["Thanks!", "Got it!", "Sounds good!"])
+            else:
+                return ["Thanks!", "Got it!", "Let me check on that"]
+                
+    except Exception as e:
+        print(f"Smart reply error: {e}")
+        return ["Thanks!", "Got it!", "Sounds good!"]
+
 @router.websocket("/ws/{channel_id}")
 async def websocket_endpoint(
     websocket: WebSocket,
@@ -129,7 +171,25 @@ async def websocket_endpoint(
         )
         
         while True:
-            text = (await websocket.receive_text()).strip()
+            data = await websocket.receive_text()
+            
+            # Handle JSON messages (for smart replies requests)
+            try:
+                json_data = json.loads(data)
+                if json_data.get("type") == "get_smart_replies":
+                    # Generate smart replies
+                    suggestions = await get_smart_replies(channel_id, user.full_name)
+                    await websocket.send_json({
+                        "type": "smart_replies",
+                        "data": {"suggestions": suggestions}
+                    })
+                    continue
+            except json.JSONDecodeError:
+                # Not JSON, treat as regular text message
+                text = data.strip()
+            else:
+                # Was JSON but not a smart reply request, skip
+                continue
 
             if is_chatbot_channel:
                 # Save the user's message first
